@@ -1,0 +1,1 @@
+This repository is going to be utilized for teaching myself Elixir programming.
