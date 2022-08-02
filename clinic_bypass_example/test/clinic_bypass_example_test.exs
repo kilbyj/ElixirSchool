@@ -1,33 +1,31 @@
 defmodule ClinicBypassExampleTest do
   use ExUnit.Case
-  doctest ClinicBypassExample
 
-  alias ClinicBypassExample.HealthCheck
+  import ExUnit.CaptureLog
 
-  setup do
-    bypass = Bypass.open()
-    {:ok, bypass: bypass}
-    end
+  alias ClinicBypassExample.Scheduler
 
-  test "request with HTTP 200 response", %{bypass: bypass} do
-    Bypass.expect(bypass, fn conn ->
-      Plug.Conn.resp(conn, 200, "pong")
-    end)
+  test "sites are checked and results logged" do
+    bypass_one = Bypass.open(port: 1234)
+    bypass_two = Bypass.open(port: 1337)
 
-    assert {:ok, "pong"} = HealthCheck.ping("http://localhost:#{bypass.port}")
-  end
-
-  test "request with HTTP 500 response", %{bypass: bypass} do
-    Bypass.expect(bypass, fn conn ->
+    Bypass.expect(bypass_one, fn conn ->
       Plug.Conn.resp(conn, 500, "Server Error")
     end)
 
-    assert {:error, "HTTP Status 500"} = HealthCheck.ping("http://localhost:#{bypass.port}")
-  end
+    Bypass.expect(bypass_two, fn conn ->
+      Plug.Conn.resp(conn, 200, "pong")
+    end)
 
-  test "request with unexpected outage", %{bypass: bypass} do
-    Bypass.down(bypass)
+    opts = [interval: 1, sites: ["http://localhost:1234", "http://localhost:1337"]]
 
-    assert {:error, :econnrefused} = HealthCheck.ping("http://localhost:#{bypass.port}")
+    output =
+      capture_log(fn ->
+        {:ok, _pid} = GenServer.start_link(Scheduler, opts)
+        :timer.sleep(10)
+      end)
+
+    assert output =~ "[info]  pong"
+    assert output =~ "[error] HTTP Status 500"
   end
 end
